@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+logs/
+codex_auto_merge_status.json
