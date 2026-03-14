@@ -6,7 +6,7 @@
 
 - 自动发现并合并所有 `remote` 类型订阅
 - 自动过滤不适合访问 `OpenAI / Codex / GPT` 等服务的地区节点
-- 自动创建探测策略组，并且只在同时通过 `OpenAI + Medium` 探测的节点中自动切换
+- 自动创建探测策略组，并且只在同时通过 `OpenAI + Medium + Gemini` 探测的节点中自动切换
 - 定时自动重跑，减少手工刷新和手工切换图形界面的次数
 
 它不是某一家订阅厂商专用脚本，而是基于 `Clash Verge` 本地配置结构工作的通用脚本。
@@ -103,6 +103,10 @@
   - 手工执行入口
   - 适合命令行或双击运行
 
+- `service_targets.yaml`
+  - 服务目标配置文件
+  - 用来定义“哪些站点必须可达”和“哪些域名要走 `AI_AUTO`”
+
 - `scheduled_run.ps1`
   - 给 Windows 计划任务调用的后台执行脚本
   - 负责日志落盘和并发互斥，避免多个计划任务实例重叠运行
@@ -186,11 +190,11 @@
 
 - `AI_AUTO`
   - 类型：`url-test`
-  - 作用：只在同时通过 `OpenAI + Medium` 探测的节点中自动选择当前最快可用节点
+  - 作用：只在同时通过 `service_targets.yaml` 中全部探测目标的节点中自动选择当前最快可用节点
 
 - `AI_STABLE`
   - 类型：`fallback`
-  - 作用：作为同一批双可用节点的稳定兜底组
+  - 作用：作为同一批合格节点的稳定兜底组
 
 - `AI_ALLOWED`
   - 类型：`select`
@@ -246,6 +250,54 @@ run_clash_auto_merge.cmd --no-popup
 
 ```bat
 run_clash_auto_merge.cmd --timeout 20
+```
+
+### 9.1 如何自己增加新的服务目标
+
+以后你主要改的是：
+
+```yaml
+service_targets.yaml
+```
+
+默认已经包含：
+
+- OpenAI
+- Medium
+- Gemini
+
+这个文件里有两部分最重要：
+
+- `probe_targets`
+  - 作用：定义“一个节点必须能连通哪些目标站点”才算合格
+- `route_rules`
+  - 作用：定义“哪些域名访问时要走 `AI_AUTO`”
+
+如果你想再加一个服务，通常做两步：
+
+1. 在 `probe_targets` 里增加一个探测目标
+2. 在 `route_rules` 里增加对应域名规则
+
+例如你想增加一个示例服务：
+
+```yaml
+probe_targets:
+  - name: example_service
+    url: https://example.com
+
+route_rules:
+  - DOMAIN-SUFFIX,example.com,AI_AUTO
+```
+
+改完之后你可以：
+
+- 手工执行一次 `run_clash_auto_merge.cmd`
+- 或者等计划任务下一个周期自动生效
+
+如果你只想调规则，不想立刻热重载，也可以先执行：
+
+```bat
+run_clash_auto_merge.cmd --generate-only
 ```
 
 ## 10. 如何安装自动定时执行

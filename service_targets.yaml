@@ -1,0 +1,27 @@
+selection_probe_url: https://auth.openai.com
+probe_timeout_ms: 10000
+
+probe_targets:
+  - name: api_openai
+    url: https://api.openai.com
+  - name: auth_openai
+    url: https://auth.openai.com
+  - name: chatgpt
+    url: https://chatgpt.com
+  - name: medium
+    url: https://medium.com
+  - name: gemini
+    url: https://gemini.google.com
+  - name: gemini_api
+    url: https://generativelanguage.googleapis.com
+
+route_rules:
+  - DOMAIN-SUFFIX,openai.com,AI_AUTO
+  - DOMAIN-SUFFIX,chatgpt.com,AI_AUTO
+  - DOMAIN-SUFFIX,oaistatic.com,AI_AUTO
+  - DOMAIN-SUFFIX,oaiusercontent.com,AI_AUTO
+  - DOMAIN-SUFFIX,medium.com,AI_AUTO
+  - DOMAIN-SUFFIX,gemini.google.com,AI_AUTO
+  - DOMAIN-SUFFIX,aistudio.google.com,AI_AUTO
+  - DOMAIN-SUFFIX,ai.google.dev,AI_AUTO
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,AI_AUTO

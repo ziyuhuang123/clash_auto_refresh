@@ -27,6 +27,7 @@ VERGE_DIR_NAME = "io.github.clash-verge-rev.clash-verge-rev"
 DEFAULT_OUTPUT_NAME = "codex_auto_merge.yaml"
 DEFAULT_PROBE_OUTPUT_NAME = "codex_auto_merge_probe.yaml"
 DEFAULT_STATUS_NAME = "codex_auto_merge_status.json"
+DEFAULT_SERVICE_TARGETS_NAME = "service_targets.yaml"
 DEFAULT_LATENCY_URL = "https://auth.openai.com"
 DEFAULT_PROXY_PROBE_URL = "https://chatgpt.com"
 DEFAULT_DIRECT_PROBE_URL = "https://www.gstatic.com/generate_204"
@@ -36,18 +37,24 @@ DEFAULT_TOLERANCE = 80
 DEFAULT_GLOBAL_GROUP = "AI_AUTO"
 DEFAULT_TARGET_PROBE_TIMEOUT_MS = 10000
 DEFAULT_TARGET_PROBE_WORKERS = 8
-REQUIRED_PROBE_TARGETS = [
+DEFAULT_PROBE_TARGETS = [
     ("api_openai", "https://api.openai.com"),
     ("auth_openai", "https://auth.openai.com"),
     ("chatgpt", "https://chatgpt.com"),
     ("medium", "https://medium.com"),
+    ("gemini", "https://gemini.google.com"),
+    ("gemini_api", "https://generativelanguage.googleapis.com"),
 ]
-SERVICE_RULES = [
+DEFAULT_SERVICE_RULES = [
     "DOMAIN-SUFFIX,openai.com,AI_AUTO",
     "DOMAIN-SUFFIX,chatgpt.com,AI_AUTO",
     "DOMAIN-SUFFIX,oaistatic.com,AI_AUTO",
     "DOMAIN-SUFFIX,oaiusercontent.com,AI_AUTO",
     "DOMAIN-SUFFIX,medium.com,AI_AUTO",
+    "DOMAIN-SUFFIX,gemini.google.com,AI_AUTO",
+    "DOMAIN-SUFFIX,aistudio.google.com,AI_AUTO",
+    "DOMAIN-SUFFIX,ai.google.dev,AI_AUTO",
+    "DOMAIN-SUFFIX,generativelanguage.googleapis.com,AI_AUTO",
 ]
 
 BASE_CONFIG_KEYS = [
@@ -169,6 +176,69 @@ def dump_yaml(path: Path, data: dict[str, Any]) -> None:
         width=120,
     )
     path.write_text(rendered, encoding="utf-8")
+
+
+def default_service_target_config() -> dict[str, Any]:
+    return {
+        "selection_probe_url": DEFAULT_LATENCY_URL,
+        "probe_timeout_ms": DEFAULT_TARGET_PROBE_TIMEOUT_MS,
+        "probe_targets": [{"name": name, "url": url} for name, url in DEFAULT_PROBE_TARGETS],
+        "route_rules": list(DEFAULT_SERVICE_RULES),
+    }
+
+
+def load_service_target_config(script_dir: Path) -> tuple[Path, dict[str, Any]]:
+    config_path = script_dir / DEFAULT_SERVICE_TARGETS_NAME
+    raw = default_service_target_config()
+
+    if config_path.exists():
+        data = load_yaml(config_path)
+        if "selection_probe_url" in data:
+            raw["selection_probe_url"] = data["selection_probe_url"]
+        if "probe_timeout_ms" in data:
+            raw["probe_timeout_ms"] = data["probe_timeout_ms"]
+        if "probe_targets" in data:
+            raw["probe_targets"] = data["probe_targets"]
+        if "route_rules" in data:
+            raw["route_rules"] = data["route_rules"]
+
+    selection_probe_url = str(raw.get("selection_probe_url") or DEFAULT_LATENCY_URL).strip()
+    if not selection_probe_url:
+        selection_probe_url = DEFAULT_LATENCY_URL
+
+    probe_timeout_ms_raw = raw.get("probe_timeout_ms")
+    try:
+        probe_timeout_ms = int(probe_timeout_ms_raw)
+    except Exception:  # noqa: BLE001
+        probe_timeout_ms = DEFAULT_TARGET_PROBE_TIMEOUT_MS
+    if probe_timeout_ms <= 0:
+        probe_timeout_ms = DEFAULT_TARGET_PROBE_TIMEOUT_MS
+
+    probe_targets: list[tuple[str, str]] = []
+    for item in raw.get("probe_targets") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if name and url:
+            probe_targets.append((name, url))
+    if not probe_targets:
+        probe_targets = list(DEFAULT_PROBE_TARGETS)
+
+    route_rules: list[str] = []
+    for item in raw.get("route_rules") or []:
+        rule = str(item or "").strip()
+        if rule:
+            route_rules.append(rule)
+    if not route_rules:
+        route_rules = list(DEFAULT_SERVICE_RULES)
+
+    return config_path, {
+        "selection_probe_url": selection_probe_url,
+        "probe_timeout_ms": probe_timeout_ms,
+        "probe_targets": probe_targets,
+        "route_rules": route_rules,
+    }
 
 
 def redact_url(url: str | None) -> str | None:
@@ -350,6 +420,8 @@ def build_config(
     allowed_names: list[str],
     blocked_names: list[str],
     auto_names: list[str] | None = None,
+    selection_probe_url: str = DEFAULT_LATENCY_URL,
+    route_rules: list[str] | None = None,
 ) -> dict[str, Any]:
     if not allowed_names:
         raise ClashAutomationError("All merged nodes were filtered out. Adjust the blocked region rules first.")
@@ -372,7 +444,7 @@ def build_config(
         {
             "name": "AI_AUTO",
             "type": "url-test",
-            "url": DEFAULT_LATENCY_URL,
+            "url": selection_probe_url,
             "interval": DEFAULT_INTERVAL,
             "tolerance": DEFAULT_TOLERANCE,
             "proxies": selected_auto_names,
@@ -380,7 +452,7 @@ def build_config(
         {
             "name": "AI_STABLE",
             "type": "fallback",
-            "url": DEFAULT_LATENCY_URL,
+            "url": selection_probe_url,
             "interval": DEFAULT_INTERVAL,
             "proxies": selected_auto_names,
         },
@@ -425,7 +497,7 @@ def build_config(
     )
 
     config["proxy-groups"] = proxy_groups
-    config["rules"] = [*SERVICE_RULES, "MATCH,GLOBAL"]
+    config["rules"] = [*(route_rules or DEFAULT_SERVICE_RULES), "MATCH,GLOBAL"]
     return config
 
 
@@ -496,10 +568,15 @@ def apply_generated_config(client: ControllerClient, config_path: Path, global_g
     return snapshot
 
 
-def probe_proxy_targets(client: ControllerClient, proxy_name: str, timeout_ms: int) -> dict[str, Any]:
+def probe_proxy_targets(
+    client: ControllerClient,
+    proxy_name: str,
+    timeout_ms: int,
+    probe_targets: list[tuple[str, str]],
+) -> dict[str, Any]:
     targets: dict[str, dict[str, Any]] = {}
     ok = True
-    for label, url in REQUIRED_PROBE_TARGETS:
+    for label, url in probe_targets:
         delay = client.probe_delay(proxy_name, url, timeout_ms)
         target_result: dict[str, Any] = {"url": url, "ok": delay is not None}
         if delay is not None:
@@ -515,6 +592,7 @@ def probe_proxy_targets(client: ControllerClient, proxy_name: str, timeout_ms: i
 def qualify_proxy_candidates(
     client: ControllerClient,
     candidate_names: list[str],
+    probe_targets: list[tuple[str, str]],
     timeout_ms: int = DEFAULT_TARGET_PROBE_TIMEOUT_MS,
     max_workers: int = DEFAULT_TARGET_PROBE_WORKERS,
 ) -> tuple[list[str], list[dict[str, Any]]]:
@@ -526,7 +604,7 @@ def qualify_proxy_candidates(
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_map = {
-            executor.submit(probe_proxy_targets, client, name, timeout_ms): name
+            executor.submit(probe_proxy_targets, client, name, timeout_ms, probe_targets): name
             for name in candidate_names
         }
         for future in as_completed(future_map):
@@ -631,24 +709,40 @@ def main() -> int:
     output_path = verge_dir / "profiles" / DEFAULT_OUTPUT_NAME
     probe_output_path = verge_dir / "profiles" / DEFAULT_PROBE_OUTPUT_NAME
     status_path = script_dir / DEFAULT_STATUS_NAME
+    service_config_path, service_config = load_service_target_config(script_dir)
 
     session = make_session()
     base_config = load_yaml(verge_dir / "clash-verge.yaml")
     merged_proxies, source_summaries = collect_remote_profiles(verge_dir, session, args.offline, args.timeout)
     allowed_names, blocked_names = split_allowed_and_blocked(merged_proxies)
-    probe_config = build_config(base_config, merged_proxies, allowed_names, blocked_names, auto_names=allowed_names)
+    probe_targets = list(service_config["probe_targets"])
+    route_rules = list(service_config["route_rules"])
+    selection_probe_url = str(service_config["selection_probe_url"])
+    probe_timeout_ms = int(service_config["probe_timeout_ms"])
+    probe_config = build_config(
+        base_config,
+        merged_proxies,
+        allowed_names,
+        blocked_names,
+        auto_names=allowed_names,
+        selection_probe_url=selection_probe_url,
+        route_rules=route_rules,
+    )
 
     status: dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "verge_dir": str(verge_dir),
         "output_config": str(output_path),
         "probe_output_config": str(probe_output_path),
+        "service_config": str(service_config_path),
         "generate_only": args.generate_only,
         "offline": args.offline,
         "total_proxies": len(merged_proxies),
         "allowed_proxies": len(allowed_names),
         "blocked_proxies": len(blocked_names),
-        "required_probe_targets": [url for _, url in REQUIRED_PROBE_TARGETS],
+        "selection_probe_url": selection_probe_url,
+        "required_probe_targets": [url for _, url in probe_targets],
+        "route_rules": route_rules,
         "sources": source_summaries,
         "controller_applied": False,
         "global_group": DEFAULT_GLOBAL_GROUP,
@@ -666,7 +760,12 @@ def main() -> int:
     client = build_controller(base_config)
     dump_yaml(probe_output_path, probe_config)
     apply_generated_config(client, probe_output_path, DEFAULT_GLOBAL_GROUP)
-    qualified_names, qualification_results = qualify_proxy_candidates(client, allowed_names)
+    qualified_names, qualification_results = qualify_proxy_candidates(
+        client,
+        allowed_names,
+        probe_targets=probe_targets,
+        timeout_ms=probe_timeout_ms,
+    )
     status["qualified_proxies"] = len(qualified_names)
     status["unqualified_proxies"] = len(allowed_names) - len(qualified_names)
     status["qualification_results"] = qualification_results
@@ -683,7 +782,15 @@ def main() -> int:
             show_popup(message, "Clash Auto Merge")
         return 4
 
-    merged_config = build_config(base_config, merged_proxies, allowed_names, blocked_names, auto_names=qualified_names)
+    merged_config = build_config(
+        base_config,
+        merged_proxies,
+        allowed_names,
+        blocked_names,
+        auto_names=qualified_names,
+        selection_probe_url=selection_probe_url,
+        route_rules=route_rules,
+    )
     dump_yaml(output_path, merged_config)
     snapshot = apply_generated_config(client, output_path, DEFAULT_GLOBAL_GROUP)
     status["controller_applied"] = True
