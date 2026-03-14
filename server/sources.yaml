@@ -1,0 +1,22 @@
+sources:
+  - name: flyintpro_current
+    type: file
+    path: /cephfs/zyhuang/clash/config.yaml
+    enabled: true
+
+  # Add more company YAML files here.
+  # - name: company_b_main
+  #   type: file
+  #   path: /root/path/to/company_b.yaml
+  #   enabled: true
+
+  # Remote sources are supported too.
+  # If you already have a provider subscription URL like
+  # https://example.com/api/v1/client/subscribe?token=REPLACE_ME
+  # prefer using type=url directly on the server instead of manually copying YAML from Windows.
+  # - name: company_c_remote
+  #   type: url
+  #   url: https://example.com/api/v1/client/subscribe?token=REPLACE_ME
+  #   cache_path: ./cache/company_c_remote.yaml
+  #   use_proxy: true
+  #   enabled: true
