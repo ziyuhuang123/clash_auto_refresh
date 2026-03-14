@@ -14,6 +14,20 @@ probe_targets:
     url: https://gemini.google.com
   - name: gemini_api
     url: https://generativelanguage.googleapis.com
+  - name: claude
+    url: https://claude.ai
+  - name: anthropic_api
+    url: https://api.anthropic.com
+  - name: perplexity
+    url: https://www.perplexity.ai
+  - name: perplexity_api
+    url: https://api.perplexity.ai
+  - name: cursor
+    url: https://cursor.com
+  - name: cursor_api
+    url: https://api.cursor.com
+  - name: cursor_app
+    url: https://api2.cursor.sh
 
 route_rules:
   - DOMAIN-SUFFIX,openai.com,AI_AUTO
@@ -25,3 +39,8 @@ route_rules:
   - DOMAIN-SUFFIX,aistudio.google.com,AI_AUTO
   - DOMAIN-SUFFIX,ai.google.dev,AI_AUTO
   - DOMAIN-SUFFIX,generativelanguage.googleapis.com,AI_AUTO
+  - DOMAIN-SUFFIX,claude.ai,AI_AUTO
+  - DOMAIN-SUFFIX,anthropic.com,AI_AUTO
+  - DOMAIN-SUFFIX,perplexity.ai,AI_AUTO
+  - DOMAIN-SUFFIX,cursor.com,AI_AUTO
+  - DOMAIN-SUFFIX,cursor.sh,AI_AUTO

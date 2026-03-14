@@ -44,6 +44,13 @@ DEFAULT_PROBE_TARGETS = [
     ("medium", "https://medium.com"),
     ("gemini", "https://gemini.google.com"),
     ("gemini_api", "https://generativelanguage.googleapis.com"),
+    ("claude", "https://claude.ai"),
+    ("anthropic_api", "https://api.anthropic.com"),
+    ("perplexity", "https://www.perplexity.ai"),
+    ("perplexity_api", "https://api.perplexity.ai"),
+    ("cursor", "https://cursor.com"),
+    ("cursor_api", "https://api.cursor.com"),
+    ("cursor_app", "https://api2.cursor.sh"),
 ]
 DEFAULT_SERVICE_RULES = [
     "DOMAIN-SUFFIX,openai.com,AI_AUTO",
@@ -55,6 +62,11 @@ DEFAULT_SERVICE_RULES = [
     "DOMAIN-SUFFIX,aistudio.google.com,AI_AUTO",
     "DOMAIN-SUFFIX,ai.google.dev,AI_AUTO",
     "DOMAIN-SUFFIX,generativelanguage.googleapis.com,AI_AUTO",
+    "DOMAIN-SUFFIX,claude.ai,AI_AUTO",
+    "DOMAIN-SUFFIX,anthropic.com,AI_AUTO",
+    "DOMAIN-SUFFIX,perplexity.ai,AI_AUTO",
+    "DOMAIN-SUFFIX,cursor.com,AI_AUTO",
+    "DOMAIN-SUFFIX,cursor.sh,AI_AUTO",
 ]
 
 BASE_CONFIG_KEYS = [

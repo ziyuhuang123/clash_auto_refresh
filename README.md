@@ -6,7 +6,7 @@
 
 - 自动发现并合并所有 `remote` 类型订阅
 - 自动过滤不适合访问 `OpenAI / Codex / GPT` 等服务的地区节点
-- 自动创建探测策略组，并且只在同时通过 `OpenAI + Medium + Gemini` 探测的节点中自动切换
+- 自动创建探测策略组，并且只在同时通过 `OpenAI + Medium + Gemini + Claude + Perplexity + Cursor` 探测的节点中自动切换
 - 定时自动重跑，减少手工刷新和手工切换图形界面的次数
 
 它不是某一家订阅厂商专用脚本，而是基于 `Clash Verge` 本地配置结构工作的通用脚本。
@@ -265,6 +265,14 @@ service_targets.yaml
 - OpenAI
 - Medium
 - Gemini
+- Claude
+- Perplexity
+- Cursor
+
+注意：
+
+- `https://gemini.google.com/u/1/` 这种地址不需要单独加路径规则
+- Clash 规则匹配的是域名，`DOMAIN-SUFFIX,gemini.google.com,AI_AUTO` 已经覆盖 `/u/1/`
 
 这个文件里有两部分最重要：
 
