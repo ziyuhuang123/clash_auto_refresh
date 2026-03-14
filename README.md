@@ -107,17 +107,31 @@
   - 服务目标配置文件
   - 用来定义“哪些站点必须可达”和“哪些域名要走 `AI_AUTO`”
 
+- `start_clash_and_refresh.ps1`
+  - 启动 `Clash Verge` 后立刻触发一次刷新
+  - 适合替代你原来的 Clash 启动入口
+
+- `start_clash_and_refresh.vbs`
+  - 隐藏启动 `start_clash_and_refresh.ps1`
+  - 双击时不会弹命令行黑框
+
 - `scheduled_run.ps1`
   - 给 Windows 计划任务调用的后台执行脚本
   - 负责日志落盘和并发互斥，避免多个计划任务实例重叠运行
+  - 只有在 `Clash Verge` 已经运行时才会真正执行刷新
 
 - `scheduled_task_runner.cmd`
   - 给任务计划程序用的最小包装层
   - 避免把复杂的 PowerShell 参数直接塞给 `schtasks /TR`
 
+- `scheduled_task_runner.vbs`
+  - 给计划任务使用的隐藏窗口启动器
+  - 通过 `wscript` 无控制台启动后台脚本，避免每次定时触发都弹黑框
+
 - `install_scheduled_task.ps1`
   - 安装计划任务
-  - 默认创建“固定间隔重复执行”的任务，并在安装后立即补跑一次
+  - 默认只创建“固定间隔重复执行”的任务
+  - 不再创建开机或登录触发器
 
 - `uninstall_scheduled_task.ps1`
   - 删除计划任务
@@ -318,7 +332,21 @@ run_clash_auto_merge.cmd --generate-only
 powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1
 ```
 
-### 10.2 自定义执行间隔
+### 10.2 启动 Clash 时立刻刷新
+
+推荐直接双击：
+
+```text
+start_clash_and_refresh.vbs
+```
+
+这个启动器会：
+
+1. 启动 `Clash Verge`
+2. 等待 Clash 进程出现
+3. 立刻触发一次隐藏刷新
+
+### 10.3 自定义执行间隔
 
 例如改成每 20 分钟执行一次：
 
@@ -326,13 +354,13 @@ powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1
 powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1 -Minutes 20
 ```
 
-### 10.3 只使用本地缓存的计划任务
+### 10.4 只使用本地缓存的计划任务
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1 -Offline
 ```
 
-### 10.4 删除计划任务
+### 10.5 删除计划任务
 
 如果你之前按默认 10 分钟安装过：
 
@@ -352,9 +380,7 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_scheduled_task.ps1 -Minutes
 
 - `ClashAutoMerge-Every10Min`
   - 固定间隔重复执行
-- 登录触发器
-  - 优先使用 `ClashAutoMerge-AtLogon` 计划任务
-  - 如果系统拒绝创建 `ONLOGON` 任务，则自动回退到 Startup 目录里的隐藏启动脚本
+  - 只有在 `Clash Verge` 已经运行时才会真正执行刷新
 
 后台执行时调用的是 `scheduled_run.ps1`。
 
@@ -362,6 +388,7 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_scheduled_task.ps1 -Minutes
 
 - 记录日志到 `logs/`
 - 使用命名互斥锁避免重叠执行
+- 当 `Clash Verge` 没有运行时自动跳过
 
 也就是说，即使计划任务触发得比较密，前一次还没跑完时，新的实例也会自动跳过，不会并发打架。
 

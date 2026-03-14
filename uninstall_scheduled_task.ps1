@@ -22,6 +22,10 @@ foreach ($taskName in @($logonTask, $repeatTask)) {
 }
 
 if (Test-Path $startupLauncher) {
-    Remove-Item -Path $startupLauncher -Force
-    Write-Output ("Removed startup launcher: {0}" -f $startupLauncher)
+    try {
+        Remove-Item -Path $startupLauncher -Force
+        Write-Output ("Removed startup launcher: {0}" -f $startupLauncher)
+    } catch {
+        Write-Output ("Could not remove startup launcher, leaving it in place: {0}" -f $startupLauncher)
+    }
 }

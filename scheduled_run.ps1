@@ -10,6 +10,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $scriptRoot "logs"
 $logFile = Join-Path $logDir ("scheduled-task-{0}.log" -f (Get-Date -Format "yyyyMMdd"))
 $mutexName = "Global\ClashAutoMergeTaskLock"
+$processNames = @("clash-verge", "verge-mihomo")
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -17,6 +18,10 @@ function Write-Log {
     param([string]$Message)
     $line = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message
     Add-Content -Path $logFile -Value $line -Encoding UTF8
+}
+
+function Test-ClashRunning {
+    return (@(Get-Process -Name $processNames -ErrorAction SilentlyContinue).Count -gt 0)
 }
 
 if (-not $PythonExe) {
@@ -39,6 +44,11 @@ try {
     $hasLock = $mutex.WaitOne(0)
     if (-not $hasLock) {
         Write-Log "Previous scheduled run is still active. Skip this run."
+        exit 0
+    }
+
+    if (-not (Test-ClashRunning)) {
+        Write-Log "Clash is not running. Skip this run."
         exit 0
     }
 
