@@ -352,7 +352,9 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_scheduled_task.ps1 -Minutes
 
 - `ClashAutoMerge-Every10Min`
   - 固定间隔重复执行
-  - 安装脚本在创建完成后会主动触发一次立即执行
+- 登录触发器
+  - 优先使用 `ClashAutoMerge-AtLogon` 计划任务
+  - 如果系统拒绝创建 `ONLOGON` 任务，则自动回退到 Startup 目录里的隐藏启动脚本
 
 后台执行时调用的是 `scheduled_run.ps1`。
 
