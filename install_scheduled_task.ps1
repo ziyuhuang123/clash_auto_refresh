@@ -10,13 +10,13 @@ if ($Minutes -lt 5) {
 }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$runner = Join-Path $scriptRoot "scheduled_task_runner.cmd"
+$runner = Join-Path $scriptRoot "scheduled_task_runner.vbs"
 $schtasks = Join-Path $env:SystemRoot "System32\schtasks.exe"
 
 $taskPrefix = "ClashAutoMerge"
 $logonTask = "$taskPrefix-AtLogon"
 $repeatTask = "$taskPrefix-Every${Minutes}Min"
-$taskAction = "cmd.exe /c $runner"
+$taskAction = "wscript.exe $runner"
 if ($Offline) {
     $taskAction += " --offline"
 }

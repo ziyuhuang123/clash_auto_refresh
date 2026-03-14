@@ -6,7 +6,7 @@
 
 - 自动发现并合并所有 `remote` 类型订阅
 - 自动过滤不适合访问 `OpenAI / Codex / GPT` 等服务的地区节点
-- 自动创建探测策略组，让 Mihomo 在允许节点里动态切换
+- 自动创建探测策略组，让 Mihomo 在允许节点里动态切换，并为 `medium.com` 单独分流
 - 定时自动重跑，减少手工刷新和手工切换图形界面的次数
 
 它不是某一家订阅厂商专用脚本，而是基于 `Clash Verge` 本地配置结构工作的通用脚本。
@@ -192,9 +192,13 @@
   - 类型：`fallback`
   - 作用：作为稳定兜底组
 
+- `MEDIUM_AUTO`
+  - 类型：`url-test`
+  - 作用：为 `medium.com` 及其子域名单独选择更合适的节点
+
 - `AI_ALLOWED`
   - 类型：`select`
-  - 作用：把 `AI_AUTO`、`AI_STABLE` 和所有允许节点集中到一个组里，方便手工切换
+  - 作用：把 `AI_AUTO`、`AI_STABLE`、`MEDIUM_AUTO` 和所有允许节点集中到一个组里，方便手工切换
 
 - `BLOCKED_REGIONS`
   - 类型：`select`
@@ -206,7 +210,7 @@
 
 - `GLOBAL`
   - 类型：`select`
-  - 作用：最终全局出口组，脚本会在执行后将其切换到 `AI_AUTO`
+  - 作用：规则未命中时的默认出口组，脚本会在执行后将其切换到 `AI_AUTO`
 
 ## 9. 如何手工执行
 
@@ -352,50 +356,7 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_scheduled_task.ps1 -Minutes
 - 自动组里没有活节点，但本机直连正常
   - 更像是当前允许范围内的节点整体失效，或订阅质量有问题
 
-## 15. 是否适合公开发布
-
-### 15.1 代码本身是否包含你的私人订阅密钥
-
-作为代码文件来说：
-
-- `clash_auto_merge.py`
-- `run_clash_auto_merge.cmd`
-- `scheduled_run.ps1`
-- `install_scheduled_task.ps1`
-- `uninstall_scheduled_task.ps1`
-
-这些脚本本身不包含你个人的订阅 token，也不写死某一家厂商的地址。
-
-因此从“代码逻辑”角度看，它是可以公开分享的。
-
-### 15.2 哪些内容不应该公开
-
-不要公开这些运行产物：
-
-- `codex_auto_merge_status.json`
-- `logs/`
-- 你自己客户端目录里的订阅缓存 YAML
-- 生成后的合并配置 YAML
-- `profiles.yaml`
-
-原因：
-
-- 这些文件可能包含你的订阅 URL
-- 可能包含 token
-- 可能包含你的真实节点服务器地址、密码、端口等敏感信息
-
-### 15.3 当前仓库已经做的保护
-
-项目目录下已经提供 `.gitignore`，默认忽略：
-
-- `logs/`
-- `codex_auto_merge_status.json`
-- `__pycache__/`
-- `*.pyc`
-
-如果你打算发到互联网，建议只上传源码和文档，不要上传任何本地运行产物。
-
-## 16. 仍然存在的局限
+## 15. 仍然存在的局限
 
 当前版本有几个边界：
 
@@ -411,7 +372,7 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_scheduled_task.ps1 -Minutes
 3. 增加导出示例配置
 4. 增加更标准的 CLI 包装
 
-## 17. 最简使用建议
+## 16. 最简使用建议
 
 如果你只想先用起来：
 

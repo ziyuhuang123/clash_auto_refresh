@@ -20,12 +20,22 @@ VERGE_DIR_NAME = "io.github.clash-verge-rev.clash-verge-rev"
 DEFAULT_OUTPUT_NAME = "codex_auto_merge.yaml"
 DEFAULT_STATUS_NAME = "codex_auto_merge_status.json"
 DEFAULT_LATENCY_URL = "https://auth.openai.com"
+DEFAULT_MEDIUM_LATENCY_URL = "https://miro.medium.com"
 DEFAULT_PROXY_PROBE_URL = "https://chatgpt.com"
 DEFAULT_DIRECT_PROBE_URL = "https://www.gstatic.com/generate_204"
 DEFAULT_TIMEOUT = 15
 DEFAULT_INTERVAL = 300
 DEFAULT_TOLERANCE = 80
 DEFAULT_GLOBAL_GROUP = "AI_AUTO"
+AI_RULES = [
+    "DOMAIN-SUFFIX,openai.com,AI_AUTO",
+    "DOMAIN-SUFFIX,chatgpt.com,AI_AUTO",
+    "DOMAIN-SUFFIX,oaistatic.com,AI_AUTO",
+    "DOMAIN-SUFFIX,oaiusercontent.com,AI_AUTO",
+]
+MEDIUM_RULES = [
+    "DOMAIN-SUFFIX,medium.com,MEDIUM_AUTO",
+]
 
 BASE_CONFIG_KEYS = [
     "mixed-port",
@@ -335,7 +345,7 @@ def build_config(
         if key in base_config:
             config[key] = copy.deepcopy(base_config[key])
 
-    config["mode"] = "global"
+    config["mode"] = "rule"
     profile = dict(config.get("profile") or {})
     profile["store-selected"] = True
     config["profile"] = profile
@@ -358,9 +368,17 @@ def build_config(
             "proxies": allowed_names,
         },
         {
+            "name": "MEDIUM_AUTO",
+            "type": "url-test",
+            "url": DEFAULT_MEDIUM_LATENCY_URL,
+            "interval": DEFAULT_INTERVAL,
+            "tolerance": DEFAULT_TOLERANCE,
+            "proxies": allowed_names,
+        },
+        {
             "name": "AI_ALLOWED",
             "type": "select",
-            "proxies": dedupe_keep_order(["AI_AUTO", "AI_STABLE", *allowed_names, "DIRECT"]),
+            "proxies": dedupe_keep_order(["AI_AUTO", "AI_STABLE", "MEDIUM_AUTO", *allowed_names, "DIRECT"]),
         },
     ]
 
@@ -387,6 +405,7 @@ def build_config(
             "proxies": dedupe_keep_order(
                 [
                     "AI_AUTO",
+                    "MEDIUM_AUTO",
                     "AI_STABLE",
                     "AI_ALLOWED",
                     *(["BLOCKED_REGIONS"] if blocked_names else []),
@@ -398,7 +417,7 @@ def build_config(
     )
 
     config["proxy-groups"] = proxy_groups
-    config["rules"] = ["MATCH,GLOBAL"]
+    config["rules"] = [*AI_RULES, *MEDIUM_RULES, "MATCH,GLOBAL"]
     return config
 
 
@@ -571,15 +590,18 @@ def main() -> int:
     latest_snapshot = client.get_json("/proxies")
     auto_health = group_health(latest_snapshot, "AI_AUTO")
     stable_health = group_health(latest_snapshot, "AI_STABLE")
+    medium_health = group_health(latest_snapshot, "MEDIUM_AUTO")
     proxy_ok = bool(auto_health["alive_members"] or stable_health["alive_members"])
 
     status["proxy_health"] = {
         "AI_AUTO": auto_health,
         "AI_STABLE": stable_health,
+        "MEDIUM_AUTO": medium_health,
     }
     status["proxy_connectivity"] = proxy_ok
     status["global_now"] = current_global_now(latest_snapshot)
     status["auto_now"] = auto_health["now"]
+    status["medium_now"] = medium_health["now"]
 
     direct_ok = None
     if not proxy_ok:
@@ -593,6 +615,7 @@ def main() -> int:
     print(f"Allowed proxies: {len(allowed_names)} | Blocked proxies: {len(blocked_names)}")
     print(f"GLOBAL now: {status.get('global_now')}")
     print(f"AI_AUTO now: {status.get('auto_now')}")
+    print(f"MEDIUM_AUTO now: {status.get('medium_now')}")
 
     if proxy_ok:
         print("Proxy check: OK")
