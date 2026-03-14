@@ -8,33 +8,46 @@ import os
 import re
 import sys
 import time
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from pathlib import Path
 from typing import Any
 
 import requests
 import yaml
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 
 VERGE_DIR_NAME = "io.github.clash-verge-rev.clash-verge-rev"
 DEFAULT_OUTPUT_NAME = "codex_auto_merge.yaml"
+DEFAULT_PROBE_OUTPUT_NAME = "codex_auto_merge_probe.yaml"
 DEFAULT_STATUS_NAME = "codex_auto_merge_status.json"
 DEFAULT_LATENCY_URL = "https://auth.openai.com"
-DEFAULT_MEDIUM_LATENCY_URL = "https://miro.medium.com"
 DEFAULT_PROXY_PROBE_URL = "https://chatgpt.com"
 DEFAULT_DIRECT_PROBE_URL = "https://www.gstatic.com/generate_204"
 DEFAULT_TIMEOUT = 15
 DEFAULT_INTERVAL = 300
 DEFAULT_TOLERANCE = 80
 DEFAULT_GLOBAL_GROUP = "AI_AUTO"
-AI_RULES = [
+DEFAULT_TARGET_PROBE_TIMEOUT_MS = 10000
+DEFAULT_TARGET_PROBE_WORKERS = 8
+REQUIRED_PROBE_TARGETS = [
+    ("api_openai", "https://api.openai.com"),
+    ("auth_openai", "https://auth.openai.com"),
+    ("chatgpt", "https://chatgpt.com"),
+    ("medium", "https://medium.com"),
+]
+SERVICE_RULES = [
     "DOMAIN-SUFFIX,openai.com,AI_AUTO",
     "DOMAIN-SUFFIX,chatgpt.com,AI_AUTO",
     "DOMAIN-SUFFIX,oaistatic.com,AI_AUTO",
     "DOMAIN-SUFFIX,oaiusercontent.com,AI_AUTO",
-]
-MEDIUM_RULES = [
-    "DOMAIN-SUFFIX,medium.com,MEDIUM_AUTO",
+    "DOMAIN-SUFFIX,medium.com,AI_AUTO",
 ]
 
 BASE_CONFIG_KEYS = [
@@ -336,9 +349,13 @@ def build_config(
     proxies: list[dict[str, Any]],
     allowed_names: list[str],
     blocked_names: list[str],
+    auto_names: list[str] | None = None,
 ) -> dict[str, Any]:
     if not allowed_names:
         raise ClashAutomationError("All merged nodes were filtered out. Adjust the blocked region rules first.")
+    selected_auto_names = dedupe_keep_order(auto_names or allowed_names)
+    if not selected_auto_names:
+        raise ClashAutomationError("No candidate nodes are available for AI_AUTO.")
 
     config: dict[str, Any] = {}
     for key in BASE_CONFIG_KEYS:
@@ -358,27 +375,19 @@ def build_config(
             "url": DEFAULT_LATENCY_URL,
             "interval": DEFAULT_INTERVAL,
             "tolerance": DEFAULT_TOLERANCE,
-            "proxies": allowed_names,
+            "proxies": selected_auto_names,
         },
         {
             "name": "AI_STABLE",
             "type": "fallback",
             "url": DEFAULT_LATENCY_URL,
             "interval": DEFAULT_INTERVAL,
-            "proxies": allowed_names,
-        },
-        {
-            "name": "MEDIUM_AUTO",
-            "type": "url-test",
-            "url": DEFAULT_MEDIUM_LATENCY_URL,
-            "interval": DEFAULT_INTERVAL,
-            "tolerance": DEFAULT_TOLERANCE,
-            "proxies": allowed_names,
+            "proxies": selected_auto_names,
         },
         {
             "name": "AI_ALLOWED",
             "type": "select",
-            "proxies": dedupe_keep_order(["AI_AUTO", "AI_STABLE", "MEDIUM_AUTO", *allowed_names, "DIRECT"]),
+            "proxies": dedupe_keep_order(["AI_AUTO", "AI_STABLE", *selected_auto_names, *allowed_names, "DIRECT"]),
         },
     ]
 
@@ -405,7 +414,6 @@ def build_config(
             "proxies": dedupe_keep_order(
                 [
                     "AI_AUTO",
-                    "MEDIUM_AUTO",
                     "AI_STABLE",
                     "AI_ALLOWED",
                     *(["BLOCKED_REGIONS"] if blocked_names else []),
@@ -417,13 +425,14 @@ def build_config(
     )
 
     config["proxy-groups"] = proxy_groups
-    config["rules"] = [*AI_RULES, *MEDIUM_RULES, "MATCH,GLOBAL"]
+    config["rules"] = [*SERVICE_RULES, "MATCH,GLOBAL"]
     return config
 
 
 class ControllerClient:
     def __init__(self, base_url: str, secret: str | None):
         self.base_url = base_url.rstrip("/")
+        self.secret = secret
         self.session = make_session()
         if secret:
             self.session.headers["Authorization"] = f"Bearer {secret}"
@@ -439,6 +448,24 @@ class ControllerClient:
         if not response.content:
             return None
         return response.json()
+
+    def probe_delay(self, proxy_name: str, url: str, timeout_ms: int) -> int | None:
+        session = make_session()
+        if self.secret:
+            session.headers["Authorization"] = f"Bearer {self.secret}"
+        response = session.get(
+            f"{self.base_url}/proxies/{quote(proxy_name, safe='')}/delay",
+            params={"url": url, "timeout": timeout_ms},
+            timeout=max(DEFAULT_TIMEOUT, timeout_ms / 1000 + 5),
+        )
+        if response.status_code != 200:
+            return None
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+        delay = payload.get("delay")
+        return int(delay) if isinstance(delay, (int, float)) else None
 
 
 def build_controller(base_config: dict[str, Any]) -> ControllerClient:
@@ -467,6 +494,56 @@ def apply_generated_config(client: ControllerClient, config_path: Path, global_g
     snapshot = wait_for_group(client, "GLOBAL")
     client.put_json("/proxies/GLOBAL", {"name": global_group})
     return snapshot
+
+
+def probe_proxy_targets(client: ControllerClient, proxy_name: str, timeout_ms: int) -> dict[str, Any]:
+    targets: dict[str, dict[str, Any]] = {}
+    ok = True
+    for label, url in REQUIRED_PROBE_TARGETS:
+        delay = client.probe_delay(proxy_name, url, timeout_ms)
+        target_result: dict[str, Any] = {"url": url, "ok": delay is not None}
+        if delay is not None:
+            target_result["delay_ms"] = delay
+        else:
+            ok = False
+        targets[label] = target_result
+        if not ok:
+            break
+    return {"name": proxy_name, "ok": ok, "targets": targets}
+
+
+def qualify_proxy_candidates(
+    client: ControllerClient,
+    candidate_names: list[str],
+    timeout_ms: int = DEFAULT_TARGET_PROBE_TIMEOUT_MS,
+    max_workers: int = DEFAULT_TARGET_PROBE_WORKERS,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    if not candidate_names:
+        return [], []
+
+    workers = max(1, min(max_workers, len(candidate_names)))
+    results_by_name: dict[str, dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(probe_proxy_targets, client, name, timeout_ms): name
+            for name in candidate_names
+        }
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                results_by_name[name] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                results_by_name[name] = {
+                    "name": name,
+                    "ok": False,
+                    "error": str(exc),
+                    "targets": {},
+                }
+
+    ordered_results = [results_by_name[name] for name in candidate_names]
+    qualified_names = [item["name"] for item in ordered_results if item.get("ok")]
+    return qualified_names, ordered_results
 
 
 def direct_connectivity_ok(timeout: int) -> bool:
@@ -552,36 +629,62 @@ def main() -> int:
     script_dir = Path(__file__).resolve().parent
     verge_dir = detect_verge_dir()
     output_path = verge_dir / "profiles" / DEFAULT_OUTPUT_NAME
+    probe_output_path = verge_dir / "profiles" / DEFAULT_PROBE_OUTPUT_NAME
     status_path = script_dir / DEFAULT_STATUS_NAME
 
     session = make_session()
     base_config = load_yaml(verge_dir / "clash-verge.yaml")
     merged_proxies, source_summaries = collect_remote_profiles(verge_dir, session, args.offline, args.timeout)
     allowed_names, blocked_names = split_allowed_and_blocked(merged_proxies)
-    merged_config = build_config(base_config, merged_proxies, allowed_names, blocked_names)
-    dump_yaml(output_path, merged_config)
+    probe_config = build_config(base_config, merged_proxies, allowed_names, blocked_names, auto_names=allowed_names)
 
     status: dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "verge_dir": str(verge_dir),
         "output_config": str(output_path),
+        "probe_output_config": str(probe_output_path),
         "generate_only": args.generate_only,
         "offline": args.offline,
         "total_proxies": len(merged_proxies),
         "allowed_proxies": len(allowed_names),
         "blocked_proxies": len(blocked_names),
+        "required_probe_targets": [url for _, url in REQUIRED_PROBE_TARGETS],
         "sources": source_summaries,
         "controller_applied": False,
         "global_group": DEFAULT_GLOBAL_GROUP,
     }
 
     if args.generate_only:
+        dump_yaml(output_path, probe_config)
+        status["qualification_skipped"] = True
         write_status(status_path, status)
         print(f"Generated {output_path}")
         print(f"Allowed proxies: {len(allowed_names)} | Blocked proxies: {len(blocked_names)}")
+        print("Qualification skipped: generate-only mode")
         return 0
 
     client = build_controller(base_config)
+    dump_yaml(probe_output_path, probe_config)
+    apply_generated_config(client, probe_output_path, DEFAULT_GLOBAL_GROUP)
+    qualified_names, qualification_results = qualify_proxy_candidates(client, allowed_names)
+    status["qualified_proxies"] = len(qualified_names)
+    status["unqualified_proxies"] = len(allowed_names) - len(qualified_names)
+    status["qualification_results"] = qualification_results
+
+    if not qualified_names:
+        status["direct_connectivity"] = direct_connectivity_ok(args.timeout)
+        write_status(status_path, status)
+        message = (
+            "Merged candidates were loaded, but no node passed all required probes for OpenAI and Medium.\n"
+            "Check the status file for per-node results, or switch a node manually in ALL_NODES for debugging."
+        )
+        print(message, file=sys.stderr)
+        if not args.no_popup:
+            show_popup(message, "Clash Auto Merge")
+        return 4
+
+    merged_config = build_config(base_config, merged_proxies, allowed_names, blocked_names, auto_names=qualified_names)
+    dump_yaml(output_path, merged_config)
     snapshot = apply_generated_config(client, output_path, DEFAULT_GLOBAL_GROUP)
     status["controller_applied"] = True
 
@@ -590,18 +693,15 @@ def main() -> int:
     latest_snapshot = client.get_json("/proxies")
     auto_health = group_health(latest_snapshot, "AI_AUTO")
     stable_health = group_health(latest_snapshot, "AI_STABLE")
-    medium_health = group_health(latest_snapshot, "MEDIUM_AUTO")
     proxy_ok = bool(auto_health["alive_members"] or stable_health["alive_members"])
 
     status["proxy_health"] = {
         "AI_AUTO": auto_health,
         "AI_STABLE": stable_health,
-        "MEDIUM_AUTO": medium_health,
     }
     status["proxy_connectivity"] = proxy_ok
     status["global_now"] = current_global_now(latest_snapshot)
     status["auto_now"] = auto_health["now"]
-    status["medium_now"] = medium_health["now"]
 
     direct_ok = None
     if not proxy_ok:
@@ -613,9 +713,9 @@ def main() -> int:
 
     print(f"Generated {output_path}")
     print(f"Allowed proxies: {len(allowed_names)} | Blocked proxies: {len(blocked_names)}")
+    print(f"Qualified proxies: {len(qualified_names)}")
     print(f"GLOBAL now: {status.get('global_now')}")
     print(f"AI_AUTO now: {status.get('auto_now')}")
-    print(f"MEDIUM_AUTO now: {status.get('medium_now')}")
 
     if proxy_ok:
         print("Proxy check: OK")

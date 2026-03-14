@@ -6,7 +6,7 @@
 
 - 自动发现并合并所有 `remote` 类型订阅
 - 自动过滤不适合访问 `OpenAI / Codex / GPT` 等服务的地区节点
-- 自动创建探测策略组，让 Mihomo 在允许节点里动态切换，并为 `medium.com` 单独分流
+- 自动创建探测策略组，并且只在同时通过 `OpenAI + Medium` 探测的节点中自动切换
 - 定时自动重跑，减少手工刷新和手工切换图形界面的次数
 
 它不是某一家订阅厂商专用脚本，而是基于 `Clash Verge` 本地配置结构工作的通用脚本。
@@ -186,19 +186,15 @@
 
 - `AI_AUTO`
   - 类型：`url-test`
-  - 作用：在允许节点中自动选择当前最快可用节点
+  - 作用：只在同时通过 `OpenAI + Medium` 探测的节点中自动选择当前最快可用节点
 
 - `AI_STABLE`
   - 类型：`fallback`
-  - 作用：作为稳定兜底组
-
-- `MEDIUM_AUTO`
-  - 类型：`url-test`
-  - 作用：为 `medium.com` 及其子域名单独选择更合适的节点
+  - 作用：作为同一批双可用节点的稳定兜底组
 
 - `AI_ALLOWED`
   - 类型：`select`
-  - 作用：把 `AI_AUTO`、`AI_STABLE`、`MEDIUM_AUTO` 和所有允许节点集中到一个组里，方便手工切换
+  - 作用：把 `AI_AUTO`、`AI_STABLE` 和所有允许节点集中到一个组里，方便手工切换
 
 - `BLOCKED_REGIONS`
   - 类型：`select`
