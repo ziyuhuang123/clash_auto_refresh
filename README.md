@@ -1,8 +1,22 @@
 # Clash 多订阅自动合并与 AI 节点自动选择工具
 
+这个仓库现在包含两套方案：
+
+- 根目录现有脚本：`Windows 端`
+  - 面向 `Clash Verge / Mihomo`
+  - 依赖本地 `profiles.yaml`
+  - 通过 PowerShell 计划任务定时刷新
+- [`server/README.md`](server/README.md)：`服务器端`
+  - 面向 Linux 服务器上的命令行 `clash`
+  - 支持多个本地 YAML 和多个远程订阅 URL
+  - 在执行 `vpnon` 时自动触发节点刷新和资格筛选
+
+如果你当前是在 Windows 上跑 `Clash Verge`，继续看本文档即可。  
+如果你当前是在服务器上直接运行 `clash`，优先看 [`server/README.md`](server/README.md)。
+
 ## 1. 项目定位
 
-这是一个给 `Clash Verge` / `Mihomo` 使用的本地自动化工具，目标是：
+本文档描述的是 `Windows 端` 方案，目标是：
 
 - 自动发现并合并所有 `remote` 类型订阅
 - 自动过滤不适合访问 `OpenAI / Codex / GPT` 等服务的地区节点

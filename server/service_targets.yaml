@@ -1,0 +1,18 @@
+selection_probe_url: https://auth.openai.com
+probe_timeout_ms: 10000
+
+probe_targets:
+  - name: api_openai
+    url: https://api.openai.com
+  - name: auth_openai
+    url: https://auth.openai.com
+  - name: chatgpt
+    url: https://chatgpt.com
+  - name: platform_openai
+    url: https://platform.openai.com
+
+route_rules:
+  - DOMAIN-SUFFIX,openai.com,AI_AUTO
+  - DOMAIN-SUFFIX,chatgpt.com,AI_AUTO
+  - DOMAIN-SUFFIX,oaistatic.com,AI_AUTO
+  - DOMAIN-SUFFIX,oaiusercontent.com,AI_AUTO
